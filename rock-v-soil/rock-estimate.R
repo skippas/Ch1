@@ -1,9 +1,4 @@
-# TO DO
-# marmorata ELISAE (not elis-I-ae)
-# kangnas (which one?) marmorata has only 3 images. Lump?
-
 library(tidyverse)
-library(data.table)
 path <- "data\\2021-04-06\\"
 df <- read.csv(paste0(path,"Image Analysis Results Nikon D7100 CoastalOpt 105mm D65 to Human D65.csv"))
 df <- separate(df, Label, into = c("pop_spp", "label"), sep = "/")
@@ -15,6 +10,8 @@ df <- unite(df, "mspec", c("vis_image","uv_image"))
 df$roi <- df$substrate
 df$substrate <- substr(df$substrate, 0,1)
 unique(df$substrate) # empty space substrates?
+# P and G are grouped with b!!!
+df[df$substrate == "p" | df$substrate == "g", "substrate"] <- "b" 
 df <- df[df$substrate %in% c("a","b","c"),]
 
 # short names
@@ -116,8 +113,7 @@ df$pop_spp <- as.factor(df$pop_spp)
 df$abbrevs <- as.factor(df$abbrevs)
 
 df$species <- stringr::str_match(df$pop_spp, "_\\s*(.*?)\\s*_")[,2]
-df$population <- sapply(str_split(df$pop_spp, "_",  n = 2), `[`, 1)
-df <- df %>% mutate(species = tolower(species), population = tolower(population))
+df <- df %>% mutate(species = tolower(species))
 
 # !!!!!!!!!!!! UNRESOLVED ISSUE !!!!!!!!!!!!!!
 # kangnas 2 marmorate OP 12 looks like divergens
@@ -134,145 +130,9 @@ df[] <- lapply(df, function(x) if(is.factor(x)) factor(x) else x)
 
 # pesky 0's
 row_sub <- apply(df[, c("swMean", "mwMean", "lwMean")], 
-                1, function(row) all(row > 0.00001 ))
+                 1, function(row) all(row > 0.00001 ))
 df <- df[row_sub,]
 
-# Remove colour oultiers
-source("functions//RNL_colspace_tri.R")
-df <- RNL_colspace_tri(df = df)
-plot(df$xCoord, df$yCoord)
-abline(h = c(1, -5.5), v =(8))
-colOutliers <- df[xCoord > 8 | yCoord >1 | yCoord < -5.5,]
-df <- df[xCoord < 8 & yCoord < 1 & yCoord > -5.5,]
-dev.off()
-
-# check with Allan
-df[df$species == "lesleii.venterii", "species"] <- "leslei.venterii"
-df[df$species == "oztenia", "species"] <- "otzeniana"
-
-# Lump subspecies
-df <- df %>% 
-  mutate(species = fct_relevel(species, sort)) %>%
-  mutate(collapseSpp =
-           fct_collapse(species, 
-                        bromfieldiiSpp = c("bromfeldii", "bromfeldii.insularis","bromfeldii.menelli"),
-                        comptoniiSpp = c("comptonii", "comptonii.webrii"),
-                        divergensSpp = c("divergens", "divergens.amethystina"),
-                        halliiSpp = c("hallii", "hallii.ochraceae"),
-                        hookeriSpp = c("hookeri", "hookeri.hookeri"),
-                        leslieiSpp = c("leslei", "leslei.leslei", "leslei.venterii"),
-                        marmorataSpp = c("marmorata", "marmorata.elisiae"),
-                        dinteriSpp = c('federici','dinteri.brevis'))) %>%
-  group_by(collapseSpp) %>% 
-  mutate(collapseSpp = case_when(
-    n_distinct(abbrevs) >1 ~ as.character(collapseSpp),
-    n_distinct(abbrevs) <2 ~ "singlePopSpp")) %>%
-  mutate(collapseSpp = as_factor(collapseSpp),
-    collapseSpp = fct_recode(collapseSpp,
-                                      bromf. = 'bromfieldiiSpp',
-                                      compt. = 'comptoniiSpp',
-                                      verruc. = 'verruculosa',
-                                      dint. = 'dinteriSpp',
-                                      singlePops = 'singlePopSpp'))
-
-# put in a table with abbrev, pop, species, sampling of subs..
-# TO DO: add in the mspec counts. Difficult because summarise causes to lose. 
-summaryTbl <- df %>% arrange(species) %>%
-  group_by(species, population,abbrevs, substrate) %>% 
-  summarise(n = n()) %>% 
-  pivot_wider(names_from = substrate, values_from = n) %>%
-  rename("abbreviation" = "abbrevs", "Lithops ROI count" = "a",
-         "Rock ROI count" = "b", "Soil ROI count" = "c")
-write.csv(summaryTbl, quote = F)
-
-# Read in Allan geology categories
-alanGeol <- read.csv("C:/Users/User/OneDrive - Stellenbosch University/Masters/Dominant geologies/Geology-descriptions AGE.csv")
-alanGeol <- alanGeol %>% unite(pop_spp, c("population", "species", "code"), sep = "_")
-alanGeol[alanGeol$pop_spp == "Hopetown_aucampiae_XXAH", "allan.categories"] <- 
-  alanGeol[alanGeol$pop_spp == "Hopetown_aucampiae_AB", "allan.categories"][1] # assume same geol (same site, diff year?)
-df$pop_spp <- gsub("Oztenia", "otzeniana", df$pop_spp) # correct scientific name
-df <- merge(df, alanGeol[, c("pop_spp","allan.categories")], all.x = T) 
-
-df <- df %>%
-  mutate(allan_geol = 
-           fct_collapse(allan.categories,
-                        sedimentary = c("sedimentary"),
-                        paleMet = c("gneiss (pale meta)",
-                                    "quartzite (pale meta)",
-                                    "granite (pale meta)"), 
-                        quartz = c("quartz"),
-                        calcrete = c("calcrete"),
-                        darkIgnMet = c("gneiss (dark igneous)",
-                                       "dolerite (dark igneous)"),
-                        mixed = c("mixed / dark igneous",
-                                  "mixed / sedimentary", 
-                                  "gneiss (pale meta) / mixed",
-                                  "sedimentary / mixed")),
-         geol_abbrevs = fct_recode(allan_geol,
-                                   SED = 'sedimentary',
-                                   PMET = 'paleMet',
-                                   QTZ = 'quartz',
-                                   CAL = 'calcrete',
-                                   MIX = 'mixed',
-                                   DIGMET = 'darkIgnMet')) %>%
-  select(-c("allan.categories"))  
-  
-  
-
-df[df$substrate == 'a', 'subRename'] <- 'Lithops'
-df[df$substrate == 'b', 'subRename'] <- 'Rock'
-df[df$substrate == 'c', 'subRename'] <- 'Soil'
-
-
-#rm(list=setdiff(ls(), "df"))
-rm(sampling,ls,dat,abbrevs, i, path,short,rowsub, excl,
-   sedimentary, short, row_sub,
-   path, quartz_quartzite, graniteOrComplex, calcrete,
-   dupROINames,RNL_colspace_tri,
-   alanGeol, colOutliers, summaryTbl)
-
-for(i in 1:10){
-  dev.off()
-}
-
-# double check JNDs / coordinates versus MICA and PAVO ####
-
-euclidean <- function(a, b) sqrt(sum((a - b)^2))
-
-x<-df %>% filter(pop_spp == grep('Droedam', unique(df$pop_spp), value = T),
-                 mspec == '0317_0321', roi == 'a1' | roi == 'b1',
-                 substrate == 'a' | substrate == 'b')
-plot(x$xCoord, x$yCoord)
-x1 <-as.numeric(x[1, c('xCoord', 'yCoord')])
-x2 <- as.numeric(x[2, c('xCoord', 'yCoord')])
-euclidean(x1, x2)
-
-checkPavoVsGmeandist <- x %>%
-  select('abbrevs','substrate', 'swMean', 'mwMean','lwMean','lumMean') %>%
-  rename(s = 'swMean', m = 'mwMean', l = 'lwMean',  lum = 'lumMean') %>%
-  mutate(substrate = make.unique(substrate)) %>%
-  as.data.frame()
-rownames(checkPavoVsGmeandist) <- checkPavoVsGmeandist$substrate
-checkPavoVsGmeandist$substrate <- NULL
-checkPavoVsGmeandist$abbrevs <- NULL
-cntrst <- substring(rownames(checkPavoVsGmeandist),1,1)
-
-pavoDists <- bootcoldist(checkPavoVsGmeandist,
-                         by = cntrst,
-                         n = c(1, 16, 32),
-                         weber = 0.05,
-                         weber.achro = 0.1,
-                         achromatic = T,
-                         qcatch = 'Qi',
-                         weber.ref = 'longest'
-)
-
-
-library(pavo)
-coldist()
-
-sqrt(32/49)*0.02
-
-0.01616244/ sqrt(16/49)
-
+rm(sampling,ls,dat,abbrevs, i, path,short,rowsub, excl, calcrete, dupROINames, 
+   graniteOrComplex,quartz_quartzite, row_sub, sedimentary)
 
