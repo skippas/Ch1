@@ -11,7 +11,7 @@ source("functions\\coldist_effic.R")
 source("functions\\distToOrigDF.R")
 
 theme_set(theme_bw())
-theme_update(panel.spacing = unit(0, "lines"),
+theme_update(panel.spacing = unit(1, "lines"),
              strip.placement = "outside",
              strip.background = element_rect(colour = "black")) # see riffomonas proj
 
@@ -55,125 +55,6 @@ nrstSub_bc <- rbind(nrstSub_dS_b, nrstSub_dS_c, nrstSub_dL_b, nrstSub_dL_c)
 
 rm(nrstSub_dL_b, nrstSub_dL_c, nrstSub_dS_b, nrstSub_dS_c)
 
-# Per image distances
-
-# Nearest
-nrstSub_bc <- nrstSub_bc %>% filter(mspec.x == mspec.y)
-
-nrstLithops <- merge(unique(df[, c("swMean", "mwMean", "lwMean","lumMean",
-                                     "abbrevs", "mspec","roi", "substrate")]), 
-                   unique(nrstSub_bc[, c("abbrevs.x", "mspec.x", "roi.x")]),
-                   by.y = c("abbrevs.x","mspec.x","roi.x"),
-                   by.x = c("abbrevs","mspec", "roi")) %>%
-  distinct(.) %>%
-  select(-c('roi'))
-
-nrstLumROIs <- merge(unique(df[, c("swMean", "mwMean", "lwMean","lumMean",
-                                     "abbrevs", "mspec","roi", "substrate")]), 
-                   unique(nrstSub_bc[
-                    nrstSub_bc$visInfo == 'dL',
-                     c("abbrevs.x", "mspec.x", "roi.y")]),
-                   by.y = c("abbrevs.x","mspec.x","roi.y"),
-                   by.x = c("abbrevs","mspec", "roi")) %>%
-  group_by(abbrevs, substrate, mspec) %>% 
-  summarise_at(vars(swMean, mwMean, lwMean, lumMean), gmean)
-  
-nrstChromROIs <- merge(unique(df[, c("swMean", "mwMean", "lwMean","lumMean",
-                                   "abbrevs", "mspec","roi", "substrate")]), 
-                     unique(nrstSub_bc[
-                       nrstSub_bc$visInfo == 'dL',
-                       c("abbrevs.x", "mspec.x", "roi.y")]),
-                     by.y = c("abbrevs.x","mspec.x","roi.y"),
-                     by.x = c("abbrevs","mspec", "roi")) %>%
-  group_by(abbrevs, substrate, mspec) %>% 
-  summarise_at(vars(swMean, mwMean, lwMean, lumMean), gmean)
-
-nrstLumLs <- rbind(nrstLithops, nrstLumROIs) %>%
- mutate(splitFct = paste(abbrevs,mspec, sep = '--')) %>%
-  split(., .$splitFct)
-
-nrstChromLs <- rbind(nrstLithops, nrstChromROIs) %>%
-  mutate(splitFct = paste(abbrevs,mspec, sep = '--')) %>%
-  split(., .$splitFct)
-
-nrstLumLs <- lapply(nrstLumLs, function(x) { # Pavo format
-  rownames(x) <- make.unique(x$substrate)
-  x <- rename(x, s = 'swMean', m = 'mwMean', l = 'lwMean', lum = 'lumMean')
-  x <- x[,-which(!names(x) %in% c("s", "m", "l","lum"))]
-})
-
-nrstChromLs <- lapply(nrstChromLs, function(x) { # Pavo format
-  rownames(x) <- make.unique(x$substrate)
-  x <- rename(x, s = 'swMean', m = 'mwMean', l = 'lwMean', lum = 'lumMean')
-  x <- x[,-which(!names(x) %in% c("s", "m", "l","lum"))]
-})
-
-nrstLumLs <- lapply(nrstLumLs, coldist,
-                      n = c(1,16,32), weber = .05, weber.achro = .1, 
-                      weber.ref = "longest", qcatch = "Qi", achromatic = TRUE)
-
-nrstChromLs <- lapply(nrstChromLs, coldist, 
-                      n = c(1,16,32), weber = .05, weber.achro = .1, 
-                      weber.ref = "longest", qcatch = "Qi", achromatic = TRUE)
-
-lumDists <- rbindlist(nrstLumLs, idcol= "names") %>%
-  separate(., names, into = c("abbrevs", "mspec"), sep = "--") %>%
-  select(-c(dS)) %>%
-  filter(patch1 == 'a' | patch2 == 'a')
-
-chromDists <- rbindlist(nrstChromLs, idcol= "names") %>%
-  separate(., names, into = c("abbrevs", "mspec"), sep = "--") %>%
-  select(-c(dL)) %>%
-  filter(patch1 == 'a' | patch2 == 'a')
-
-perImageDists <- merge(chromDists, lumDists) %>%
-  pivot_longer(cols = c('dS', 'dL'), 
-               values_to = 'distance', names_to = 'visInfo') %>%
-  rename(., substrate = 'patch2') %>%
-  select(-c(patch1)) %>%
-  pivot_wider(names_from = substrate, values_from = distance) %>%
-  merge(., unique(df[,c('abbrevs', 'collapseSpp')])) %>%
-  mutate(dataset = 'Nearest 10%')
-
-rm(lstChromDists, lstLumDists, nrstLumROIs,
-   nrstChromLs, nrstLumLs,nrstChromROIs)
-
-# All
-logQi <- df %>% 
-  group_by(abbrevs, mspec, substrate) %>%
-  summarise_at(vars(swMean, mwMean, lwMean, lumMean), gmean) %>%
-  mutate(splitFct = paste(abbrevs,mspec, sep = '--')) %>%
-  as.data.frame() %>% ungroup() %>%
-  split(., .$splitFct)
-
-logQi <- lapply(logQi, function(x) { # Pavo format
-  rownames(x) <- make.unique(x$substrate)
-  x <- rename(x, s = 'swMean', m = 'mwMean', l = 'lwMean', lum = 'lumMean')
-  x <- x[,-which(!names(x) %in% c("s", "m", "l","lum"))]
-})
-
-logQi <- Filter(function(x) nrow(x)>=2, logQi)
-
-perImageDistsAll <- lapply(logQi, coldist,
-                    n = c(1,16,32), weber = .05, weber.achro = .1, 
-                    weber.ref = "longest", qcatch = "Qi", achromatic = TRUE)
-
-perImageDistsAll <- rbindlist(perImageDistsAll, idcol= "names") %>%
-  separate(., names, into = c("abbrevs", "mspec"), sep = "--") %>%
-  filter(patch1 == 'a' | patch2 == 'a') %>%
-  merge(., unique(df[,c('abbrevs', 'collapseSpp')]),
-        by.x = 'abbrevs', by.y = 'abbrevs') %>%
-  mutate(dataset = 'Average') %>%
-  pivot_longer(cols = c(dS,dL), 
-               names_to = 'visInfo', values_to = 'distance') %>%
-  pivot_wider(names_from = patch2, values_from = distance) %>%
-  select(-c(patch1))
-
-perImageDists <- rbind(perImageDists, perImageDistsAll) %>%
-  mutate(facetVar = paste(visInfo, dataset))
-
-rm(logQi)
-
 # Mean distance metrics ####
 ###* Background-transfer metric ####
 perLithMeans <- nrstSub_bc %>% 
@@ -204,47 +85,146 @@ stat.test <- perLithMeans %>% mutate(subs = as_factor(subs)) %>%
 stat.test <- stat.test %>% add_xy_position(x = "abbrevs.x", scales = "free")
 stat.test$collapseSpp.x <- perLithMeans$collapseSpp.x[match(stat.test$abbrevs.x,
                                                             perLithMeans$abbrevs.x)]
-#stat.test <- stat.test %>% mutate(x.position = case_when(visInfo == "dS" ~ 2.5,
-#                     visInfo == "dL" ~ 15))
+# boxplot
 
+p <- ggplot(data = perLithMeans, 
+            aes(x = abbrevs.x, y =  dPerLith)) +
+  geom_boxplot(aes(fill = subs), outlier.shape = NA) + coord_flip() + 
+  stat_pvalue_manual(stat.test, x = "abbrevs.x", coord.flip = T,
+                     hide.ns = T, label = "p.adj.signif") +
+  scale_fill_manual(values = c("b" = "#00BFC4", "c" = "#F8766D"),
+                    labels = c("lithops-rock", "lithops-soil")) +
+  theme_bw() + theme(panel.spacing = unit(0, "lines")) +
+  labs(fill = "Substrate contrast", x = "Populations by species",
+       y = "Noise scaled distance") +
+  scale_y_continuous(sec.axis = dup_axis(name = waiver())) 
+p <- p + facet_grid(vars(collapseSpp.x), vars(visInfo), scales = "free", space = "free_y") 
+png(file = "output//rock-v-soil//boxplots-by-species-colour.png", type = 'cairo',
+    width = 20, height = 30, units = "cm", res = 300, pointsize = 6) ; p; dev.off()
 
-
+rm(stat.test, p, perLithMeans)
 ###* Paired distance metric ####
+# Per image distances
+source('functions//gmean.R')
 
-# Nrst
-# inImageMeans <- nrstSub_bc %>%
-#   filter(mspec.x == mspec.y) %>%
-#   group_by(visInfo,subs,abbrevs.x, abbrevs.y, mspec.x, mspec.y) %>%
-#   summarise(dInImages = mean(distance)) %>%
-#   pivot_wider(names_from = subs, values_from = dInImages)
-# inImageMeans$collapseSpp.x <-
-#   df$collapseSpp[match(inImageMeans$abbrevs.x, df$abbrevs)]
+# Nearest
+
+nrstSub_bc <- nrstSub_bc %>% filter(mspec.x == mspec.y)
+
+nrstLithops <- merge(unique(df[, c("swMean", "mwMean", "lwMean","lumMean",
+                                   "abbrevs", "mspec","roi", "substrate")]), 
+                     unique(nrstSub_bc[, c("abbrevs.x", "mspec.x", "roi.x")]),
+                     by.y = c("abbrevs.x","mspec.x","roi.x"),
+                     by.x = c("abbrevs","mspec", "roi")) %>%
+  distinct(.) %>%
+  select(-c('roi'))
+
+nrstLumROIs <- merge(unique(df[, c("swMean", "mwMean", "lwMean","lumMean",
+                                   "abbrevs", "mspec","roi", "substrate")]), 
+                     unique(nrstSub_bc[
+                       nrstSub_bc$visInfo == 'dL',
+                       c("abbrevs.x", "mspec.x", "roi.y")]),
+                     by.y = c("abbrevs.x","mspec.x","roi.y"),
+                     by.x = c("abbrevs","mspec", "roi")) %>%
+  group_by(abbrevs, substrate, mspec) %>% 
+  summarise_at(vars(swMean, mwMean, lwMean, lumMean), gmean)
+
+nrstChromROIs <- merge(unique(df[, c("swMean", "mwMean", "lwMean","lumMean",
+                                     "abbrevs", "mspec","roi", "substrate")]), 
+                       unique(nrstSub_bc[
+                         nrstSub_bc$visInfo == 'dS',
+                         c("abbrevs.x", "mspec.x", "roi.y")]),
+                       by.y = c("abbrevs.x","mspec.x","roi.y"),
+                       by.x = c("abbrevs","mspec", "roi")) %>%
+  group_by(abbrevs, substrate, mspec) %>% 
+  summarise_at(vars(swMean, mwMean, lwMean, lumMean), gmean)
+
+nrstLumLs <- rbind(nrstLithops, nrstLumROIs) %>%
+  mutate(splitFct = paste(abbrevs,mspec, sep = '--')) %>%
+  split(., .$splitFct)
+
+nrstChromLs <- rbind(nrstLithops, nrstChromROIs) %>%
+  mutate(splitFct = paste(abbrevs,mspec, sep = '--')) %>%
+  split(., .$splitFct)
+
+nrstLumLs <- lapply(nrstLumLs, function(x) { # Pavo format
+  rownames(x) <- make.unique(x$substrate)
+  x <- rename(x, s = 'swMean', m = 'mwMean', l = 'lwMean', lum = 'lumMean')
+  x <- x[,-which(!names(x) %in% c("s", "m", "l","lum"))]
+})
+
+nrstChromLs <- lapply(nrstChromLs, function(x) { # Pavo format
+  rownames(x) <- make.unique(x$substrate)
+  x <- rename(x, s = 'swMean', m = 'mwMean', l = 'lwMean', lum = 'lumMean')
+  x <- x[,-which(!names(x) %in% c("s", "m", "l","lum"))]
+})
+
+nrstLumLs <- lapply(nrstLumLs, coldist,
+                    n = c(1,16,32), weber = .05, weber.achro = .1, 
+                    weber.ref = "longest", qcatch = "Qi", achromatic = TRUE)
+
+nrstChromLs <- lapply(nrstChromLs, coldist, 
+                      n = c(1,16,32), weber = .05, weber.achro = .1, 
+                      weber.ref = "longest", qcatch = "Qi", achromatic = TRUE)
+
+lumDists <- rbindlist(nrstLumLs, idcol= "names") %>%
+  separate(., names, into = c("abbrevs", "mspec"), sep = "--") %>%
+  select(-c(dS)) %>%
+  filter(patch1 == 'a' | patch2 == 'a')
+
+chromDists <- rbindlist(nrstChromLs, idcol= "names") %>%
+  separate(., names, into = c("abbrevs", "mspec"), sep = "--") %>%
+  select(-c(dL)) %>%
+  filter(patch1 == 'a' | patch2 == 'a')
+
+perImageDists <- merge(chromDists, lumDists) %>%
+  pivot_longer(cols = c('dS', 'dL'), 
+               values_to = 'distance', names_to = 'visInfo') %>%
+  rename(., substrate = 'patch2') %>%
+  select(-c(patch1)) %>%
+  pivot_wider(names_from = substrate, values_from = distance) %>%
+  merge(., unique(df[,c('abbrevs', 'collapseSpp')])) %>%
+  mutate(dataset = 'Nearest 10%')
+
+rm(chromdis, lstLumDists, nrstChromROIs,
+   nrstChromLs, nrstLumLs, nrstLumROIs,
+   chromDists, lumDists, nrstLithops)
 
 # All
-# inImageMeansAllSoil <- jnds_c %>%
-#   filter(mspec.x == mspec.y) %>%
-#   group_by(abbrevs.x, abbrevs.y,
-#            mspec.x, mspec.y) %>% 
-#   summarise_at(vars(dS, dL), mean) %>% 
-#   mutate(substrate = "c")
-# 
-# inImageMeansAllRock <- jnds_b %>% 
-#   filter(mspec.x == mspec.y) %>%
-#   group_by(abbrevs.x, abbrevs.y,
-#            mspec.x, mspec.y) %>% 
-#   summarise_at(vars(dS, dL), mean) %>%
-#   mutate(substrate = "b")
-# 
-# inImageMeansAll <- rbind(inImageMeansAllRock, inImageMeansAllSoil) %>% 
-#   pivot_longer(cols = c(dS, dL),
-#                names_to = 'visInfo',
-#                values_to = 'distance') %>%
-#   pivot_wider(names_from = substrate, values_from = distance)
-# 
-# inImageMeansAll$collapseSpp.x <- 
-#   df$collapseSpp[match(inImageMeansAll$abbrevs.x, df$abbrevs)]
-# 
-# rm(inImageMeansAllRock, inImageMeansAllSoil)
+logQi <- df %>% 
+  group_by(abbrevs, mspec, substrate) %>%
+  summarise_at(vars(swMean, mwMean, lwMean, lumMean), gmean) %>%
+  mutate(splitFct = paste(abbrevs,mspec, sep = '--')) %>%
+  as.data.frame() %>% ungroup() %>%
+  split(., .$splitFct)
+
+logQi <- lapply(logQi, function(x) { # Pavo format
+  rownames(x) <- make.unique(x$substrate)
+  x <- rename(x, s = 'swMean', m = 'mwMean', l = 'lwMean', lum = 'lumMean')
+  x <- x[,-which(!names(x) %in% c("s", "m", "l","lum"))]
+})
+
+logQi <- Filter(function(x) nrow(x)>=2, logQi)
+
+perImageDistsAll <- lapply(logQi, coldist,
+                           n = c(1,16,32), weber = .05, weber.achro = .1, 
+                           weber.ref = "longest", qcatch = "Qi", achromatic = TRUE)
+
+perImageDistsAll <- rbindlist(perImageDistsAll, idcol= "names") %>%
+  separate(., names, into = c("abbrevs", "mspec"), sep = "--") %>%
+  filter(patch1 == 'a' | patch2 == 'a') %>%
+  merge(., unique(df[,c('abbrevs', 'collapseSpp')]),
+        by.x = 'abbrevs', by.y = 'abbrevs') %>%
+  mutate(dataset = 'Average') %>%
+  pivot_longer(cols = c(dS,dL), 
+               names_to = 'visInfo', values_to = 'distance') %>%
+  pivot_wider(names_from = patch2, values_from = distance) %>%
+  select(-c(patch1))
+
+perImageDists <- rbind(perImageDists, perImageDistsAll) %>%
+  mutate(facetVar = paste(visInfo, dataset))
+
+rm(logQi, perImageDistsAll)
 
 ###** Paired T-test, anno df, boxplots
 t_test <- function(df, mu = 0, alt = "two.sided", paired = T,
@@ -271,38 +251,8 @@ pairedTests <- perImageDists %>%
                                                  TRUE ~ 'Rock< Soil'),
                facetVar = paste(visInfo, dataset))
 
-
-# 
-# pairedTestsNrst <- inImageMeans %>%
-#   group_by(abbrevs.x, visInfo) %>%
-#   nest() %>%
-#   mutate(ttest = map(data, t_test)) %>%
-#   unnest(ttest) %>%
-#   group_by(visInfo) %>%
-#   mutate(p.adj = p.adjust(p.value, n = 56, method = 'holm'),
-#          dataset = 'Nearest 10%')
-
-# pairedTestsAll <- inImageMeansAll %>%
-#   group_by(abbrevs.x, visInfo) %>%
-#   nest() %>%
-#   mutate(ttest = map(data, t_test)) %>%
-#   unnest(ttest) %>%
-#   group_by(visInfo) %>%
-#   mutate(p.adj = p.adjust(p.value, n = 56, method = 'holm'),
-#          dataset = 'Average')
-# 
-# pairedTests <- merge(., unique(df[, c('abbrevs', 'collapseSpp')]),
-#         by.x = 'abbrevs.x', by.y = 'abbrevs' ) %>%
-#  # rename(., collapseSpp.x = 'collapseSpp') %>%
-#   mutate(labelz = case_when(p.adj < 0.05 ~ "*"),
-#          labelzPValue = case_when(p.value < 0.05 ~ '*'),
-#          dPerLith = case_when(visInfo == 'dL' ~ 12.5,
-#                               TRUE ~ 3.5),
-#          significanceDirection = case_when(estimate > 0 ~ 'Soil< Rock',
-#                                            TRUE ~ 'Rock< Soil'),
-#          facetVar = paste(visInfo, dataset)) 
-
 # Results 
+# Turn this into tables
 pairedTests %>%
   filter(dataset == 'Average', visInfo == 'dL', p.adj < 0.05, 
          significanceDirection == 'Rock< Soil') %>%
@@ -327,13 +277,6 @@ pairedTests %>%
 inImageMeans %>% ungroup %>%
   filter(dataset == 'Average', visInfo == 'dL', c<1) %>%
   count()
-
-###
-
-inImageMeansAll$dataset <- 'Average'
-inImageMeans$dataset <- 'Nearest 10%'
-inImageMeans <- rbind(inImageMeans, inImageMeansAll) %>%
-  mutate(facetVar = paste(visInfo, dataset))
 
 ###* boxlots
 # boxplots idea stolen from https://www.stat.auckland.ac.nz/~paul/RGraphics/examples-dotplot.R
@@ -388,41 +331,125 @@ p <- perImageDists %>%
         panel.spacing.y = unit(0,'lines'),
         legend.position = 'top')
 
-png(file = "output//rock-v-soil//RvS-pairedTest.png", type = 'cairo',
+png(file = "output//rock-v-soil//RvS-pairedTest2.png", type = 'cairo',
     width = 215, height = 280, units = "mm", res = 300, pointsize = 6)
 p
 dev.off()
 
-# background transfer
-
-p <- ggplot(data = perLithMeans, 
-            aes(x = abbrevs.x, y =  dPerLith)) +
-  geom_boxplot(aes(fill = subs), outlier.shape = NA) + coord_flip() + 
-  stat_pvalue_manual(stat.test, x = "abbrevs.x", coord.flip = T,
-                     hide.ns = T, label = "p.adj.signif") +
-  scale_fill_manual(values = c("b" = "#00BFC4", "c" = "#F8766D"),
-                    labels = c("lithops-rock", "lithops-soil")) +
-  theme_bw() + theme(panel.spacing = unit(0, "lines")) +
-  labs(fill = "Substrate contrast", x = "Populations by species",
-       y = "Noise scaled distance") +
-  scale_y_continuous(sec.axis = dup_axis(name = waiver())) 
-p <- p + facet_grid(vars(collapseSpp.x), vars(visInfo), scales = "free", space = "free_y") 
-png(file = "output//rock-v-soil//boxplots-by-species-colour.png", type = 'cairo',
-    width = 20, height = 30, units = "cm", res = 300, pointsize = 6) ; p; dev.off()
+rm(pairedTests, p)
 
 # LR V LS pop-mean distances (scatterplots) ####
-###* Plotting data
+
 source("functions\\gMeanDists.R")
-source("functions\\gmean.R")
 
-allGmeanDist <- df %>%  filter(abbrevs == unique(df$abbrevs)[8]) %>%
+nrstSub_bc <- nrstSub_bc %>% filter(mspec.x == mspec.y)
 
- group_by(abbrevs, substrate, mspec) %>% # each image contributes equally to gmean dist
- summarise_at(vars(swMean, mwMean, lwMean, lumMean), gmean) %>% 
- gMeanDists(df = ., combine_bg = F,substrates = c("b","c")) %>%
-  filter(comparison == "local") %>% 
-  pivot_wider(values_from = c("dL","dS"),
-              names_from = c("patch1", "patch2"))
+nrstLithops <- merge(unique(df[, c("swMean", "mwMean", "lwMean","lumMean",
+                                   "abbrevs", "mspec","roi", "substrate")]), 
+                     unique(nrstSub_bc[, c("abbrevs.x", "mspec.x", "roi.x")]),
+                     by.y = c("abbrevs.x","mspec.x","roi.x"),
+                     by.x = c("abbrevs","mspec", "roi")) %>%
+  distinct(.) %>%
+  group_by(abbrevs, substrate) %>%
+  summarise_at(vars(swMean, mwMean, lwMean, lumMean), gmean) 
+
+gMeanLum <- merge(unique(df[, c("swMean", "mwMean", "lwMean","lumMean",
+                                   "abbrevs", "mspec","roi", "substrate")]), 
+                     unique(nrstSub_bc[
+                       nrstSub_bc$visInfo == 'dL',
+                       c("abbrevs.x", "mspec.x", "roi.y")]),
+                     by.y = c("abbrevs.x","mspec.x","roi.y"),
+                     by.x = c("abbrevs","mspec", "roi")) %>%
+  group_by(abbrevs, substrate, mspec) %>% 
+  summarise_at(vars(swMean, mwMean, lwMean, lumMean), gmean) %>%
+  group_by(abbrevs, substrate) %>%
+  summarise_at(vars(swMean, mwMean, lwMean, lumMean), gmean) %>%
+  rbind(nrstLithops) %>%
+  as.data.frame(.) %>%
+  split(.,.$abbrevs)
+
+gMeanChrom <- merge(unique(df[, c("swMean", "mwMean", "lwMean","lumMean",
+                                     "abbrevs", "mspec","roi", "substrate")]), 
+                       unique(nrstSub_bc[
+                         nrstSub_bc$visInfo == 'dS',
+                         c("abbrevs.x", "mspec.x", "roi.y")]),
+                       by.y = c("abbrevs.x","mspec.x","roi.y"),
+                       by.x = c("abbrevs","mspec", "roi")) %>%
+  group_by(abbrevs, substrate, mspec) %>% 
+  summarise_at(vars(swMean, mwMean, lwMean, lumMean), gmean) %>%
+  group_by(abbrevs, substrate) %>%
+  summarise_at(vars(swMean, mwMean, lwMean, lumMean), gmean) %>%
+  rbind(nrstLithops) %>%
+  as.data.frame(.) %>%
+  split(.,.$abbrevs)
+
+gMeanAll <- df %>%  
+  group_by(abbrevs, substrate, mspec) %>% # each image contributes equally to gmean dist
+  summarise_at(vars(swMean, mwMean, lwMean, lumMean), gmean) %>% 
+  group_by(abbrevs, substrate) %>%
+  summarise_at(vars(swMean, mwMean, lwMean, lumMean), gmean) %>%
+  as.data.frame(.) %>%
+  split(.,.$abbrevs)
+
+
+gMeanLum <- lapply(gMeanLum, function(x) { # Pavo format
+  rownames(x) <- make.unique(x$substrate)
+  x <- rename(x, s = 'swMean', m = 'mwMean', l = 'lwMean', lum = 'lumMean')
+  x <- x[,-which(!names(x) %in% c("s", "m", "l","lum"))]
+})
+
+gMeanChrom <- lapply(gMeanChrom, function(x) { # Pavo format
+  rownames(x) <- make.unique(x$substrate)
+  x <- rename(x, s = 'swMean', m = 'mwMean', l = 'lwMean', lum = 'lumMean')
+  x <- x[,-which(!names(x) %in% c("s", "m", "l","lum"))]
+})
+
+gMeanAll <- lapply(gMeanAll, function(x) { # Pavo format
+  rownames(x) <- make.unique(x$substrate)
+  x <- rename(x, s = 'swMean', m = 'mwMean', l = 'lwMean', lum = 'lumMean')
+  x <- x[,-which(!names(x) %in% c("s", "m", "l","lum"))]
+})
+
+gMeanLum <- lapply(gMeanLum, coldist,
+                   n = c(1,16,32), weber = .05, weber.achro = .1, 
+                   weber.ref = "longest",
+                   qcatch = "Qi", achromatic = TRUE) %>%
+  rbindlist(., idcol = 'abbrevs') %>%
+  pivot_longer(cols = c(dS,dL), 
+               names_to = 'visInfo', values_to = 'distance') %>%
+  filter(patch1 == 'a' | patch2 == 'a', visInfo == 'dL') %>%
+  select(-c(patch2)) %>%
+  rename(substrate = 'patch1') %>%
+  mutate(dataset = 'Nearest 10%')
+
+gMeanChrom <- lapply(gMeanChrom, coldist,
+                     n = c(1,16,32), weber = .05, weber.achro = .1, 
+                     weber.ref = "longest",
+                     qcatch = "Qi", achromatic = TRUE) %>%
+  rbindlist(., idcol = 'abbrevs') %>%
+  pivot_longer(cols = c(dS,dL), 
+               names_to = 'visInfo', values_to = 'distance') %>%
+  filter(patch1 == 'a' | patch2 == 'a', visInfo == 'dS') %>%
+  select(-c(patch2)) %>%
+  rename(substrate = 'patch1') %>%
+  mutate(dataset = 'Nearest 10%')
+  
+gMeanAll <- lapply(gMeanAll, coldist,
+                   n = c(1,16,32), weber = .05, weber.achro = .1, 
+                   weber.ref = "longest",
+                   qcatch = "Qi", achromatic = TRUE) %>%
+  rbindlist(., idcol = 'abbrevs') %>%
+  filter(patch1 == 'a' | patch2 == 'a') %>%
+  select(-c(patch1)) %>%
+  rename(substrate = 'patch2') %>%
+  mutate(dataset = 'Average') %>%
+  pivot_longer(cols = c(dS,dL), 
+               names_to = 'visInfo', values_to = 'distance')
+
+gMeans <- rbind(gMeanAll, gMeanLum, gMeanChrom) %>% 
+  pivot_wider(names_from = 'substrate', values_from = 'distance') 
+rm(gMeanAll, gMeanLum, gMeanChrom, nrstLithops)
+
 
 # Add substrate frequency variable
 source("rock-v-soil//rock-estimate.R")
@@ -438,157 +465,40 @@ allGmeanDist <- allGmeanDist %>%
   mutate(collapseSpp = df$collapseSpp[match(.$abbrevs, df$abbrevs)],
          siteLabs = unlist(lapply(str_split(abbrevs, "_"), `[[`, 1)))
 
-###* Scatterplots LR vs LS (average dataset)
-dummy <- data.frame('a_b' =  c(range(allGmeanDist$dL_a_b,
-                                      allGmeanDist$dL_a_c),
-                               range(allGmeanDist$dS_a_b,
-                                     allGmeanDist$dS_a_c)),
-                    'a_c' = c(range(allGmeanDist$dL_a_b,
-                                  allGmeanDist$dL_a_c),
-                              range(allGmeanDist$dS_a_b,
-                                    allGmeanDist$dS_a_c)),
-                    'visInfo' = c(rep('dL',2), rep('dS',2)),
-                    'rock_cover' = 0
-                    )
-png("output//rock-v-soil//LR-v-LS-facet-gMeanDist-scatter.png",
-    type = 'cairo', units = 'mm', width = 215, height = 300, res = 300)
-allGmeanDist %>% pivot_longer(cols = contains(c('dL', 'dS')),
-                              names_to = c('visInfo','.value'),
-                              names_sep = 3) %>%
-  mutate(visInfo = fct_recode(visInfo, 'dL' = 'dL_', 'dS' = 'dS_')) %>%
-  ggplot(aes(x = a_c, y = a_b, colour = rock_cover))+ 
-  geom_point()+
-  geom_abline(slope = 1, intercept = 0, lty = 2)+ 
-  geom_blank(data = dummy)+
-  theme_bw()+
-  #coord_fixed(xlim = c(0,2.2), ylim = c(0,2.2))+ 
-  labs(y = "L-R geometric mean distance (JNDs)",
-       x = "L-S geometric mean distance (JNDs)")+
-  theme(axis.title = element_text(size = 10), 
-        aspect.ratio = 1)+
-  facet_wrap(vars(visInfo), scales = 'free', ncol = 1,
-             labeller = labeller(visInfo = c(dL = 'Lum dist', dS = 'Chroma dist')))
-dev.off()
-  
-
-###** small multiples facet by spp
-pLum <- ggplot(allGmeanDist, aes(x = dL_a_c, y = dL_a_b))+
-  geom_point(data = allGmeanDist[, c("dL_a_c", "dL_a_b")], color = "gray")+
-  geom_point(aes(fill = rock_cover), size = 2, pch =21)+ 
-  geom_abline(intercept = 0, lty = 2)+
-  geom_text_repel(aes(label = siteLabs),
-                  max.overlaps = Inf,
-                  min.segment.length = 0,
-                  box.padding = 0.5)+
-  xlab("LS geometric mean distance")+ ylab("LR geometric mean distance")+
-  facet_wrap(vars(collapseSpp))+
-  theme(aspect.ratio = 1)
-png("output\\rock-v-soil\\LR-vs-LS-lum-gmeandist-scatter_facetSpp.png",
-    type = 'cairo',
-    width = 150, height = 150, units = "mm", res = 300, pointsize = 6)
-pLum; dev.off()
-
-pCol <- ggplot(allGmeanDist, aes(x = dS_a_c, y = dS_a_b))+
-  geom_point(data = allGmeanDist[, c("dS_a_c", "dS_a_b")], color = "gray")+
-  geom_point(aes(fill = rock_cover), size = 2, pch =21)+ 
-  geom_abline(intercept = 0, lty = 2)+
-  geom_text_repel(aes(label = siteLabs),
-                  max.overlaps = Inf,
-                  min.segment.length = 0,
-                  box.padding = 0.5)+
-  xlab("LS geometric mean distance")+ ylab("LR geometric mean distance")+
-  facet_wrap(vars(collapseSpp))+
-  theme(aspect.ratio = 1)
-png("output\\rock-v-soil\\LR-vs-LS-col-gmeandist-scatter_facetSpp.png",
-    type = 'cairo',
-    width = 150, height = 150, units = "mm", res = 300, pointsize = 6)
-pCol; dev.off()
-
-rm(pCol, pLum)
-
-###* Scatterplots LR vs LS (vary nearest % of points)
-# The nearest 10 %, 50% and all
-# There is a BUG in the gMeanDist function
-#** Plotting data
-
-data <- list(jnds_b, jnds_b, jnds_c, jnds_c, jnds_b, jnds_b, jnds_c, jnds_c)
-locOn <- rep(T, 8)
-acrIm <- rep(F,8) 
-vf <- c(rep("dL",4), rep("dS", 4))
-qt <- rep(c(10,2), 4)
-distSubsets <- Map(nearSubset,data,locOn,acrIm, vf, qt)
-names(distSubsets) <- c("b_10%_dL","b_50%_dL", "c_10%_dL", "c_50%_dL",
-                        "b_10%_dS", "b_50%_dS", "c_10%_dS", "c_50%_dS")
-
-rm(locOn,acrIm, vf, qt, data)
-
-distSubsets <- lapply(distSubsets, distToOrigDF)
-df2 <- df[,c(colnames(distSubsets[[1]]))]
-df2 <- ungroup(df2)
-distSubsets[["b_100%_dL"]] <- df2[df2$substrate != "c",] # add in the 'all' dists
-distSubsets[["b_100%_dS"]] <- df2[df2$substrate != "c",]
-distSubsets[["c_100%_dL"]] <- df2[df2$substrate != "b",]
-distSubsets[["c_100%_dS"]] <- df2[df2$substrate != "b",]
-rm(df2)
-
-perImageMeans <-  distSubsets %>%   # each image contributes equally to gmean dist
-  rbindlist(idcol = T) %>% 
-  group_by(.id, abbrevs, substrate, mspec) %>% 
-  summarise_at(vars(swMean, mwMean, lwMean, lumMean), mean) %>%
-  split(.$.id)
-
-gMeanSubsets <- Map(f=gMeanDists,perImageMeans,substrates =
-                      c(rep("b",6), rep("c", 6)))
-
-bindGmean <- gMeanSubsets %>%
-  rbindlist(idcol = T) %>%
-  filter(comparison == "local") %>% 
-  separate(.,.id, into = c("substrate","pcentNrst","visfeature")) %>%
-  pivot_longer(cols = c("dS", "dL"),
-               values_to = "gmDist", names_to = "visInfo") %>%
-  filter(visfeature == visInfo)  %>% # drop rows where visInf and visf !=
-  select(-c("patch1", "patch2")) %>% 
-  pivot_wider(values_from = "gmDist", names_from = "substrate")
-
-# Remove nearest 50%
-bindGmean <- bindGmean %>% 
-  filter(pcentNrst != '50')
-
-###** Scatterplot
-
 bindGmean$facetVar = paste(bindGmean$visfeature, bindGmean$pcentNrst, sep = '_')
 
 bindGmean<- bindGmean %>% 
   mutate(pcentNrst = fct_recode(pcentNrst, '10%' = '10',
-                               'All' = '100'))
+                                'All' = '100'))
 
-p1<- ggplot(bindGmean %>% filter(visInfo == "dL"), aes(x =c, y = b))+
+p1<- ggplot(gMeans %>% filter(visInfo == "dL"), aes(x =c, y = b))+
   geom_point()+
-  xlim(c(0,12))+ ylim(c(0,12))+
+  xlim(c(0,14))+ ylim(c(0,14))+
   xlab(NULL)+ylab('L-R gmean distance')+
   labs(title = "Luminance")+
   geom_abline(lty = 2)+
   coord_equal()+
-  facet_grid(vars(pcentNrst), switch = 'y')+
-    theme(strip.placement = 'outside',
-          strip.background = element_blank(),
-          plot.title = element_text(hjust = .5, vjust = .5, size = 10),
-          axis.title.x = element_text(
-            margin = unit(c(0, 0, 0, 0), "mm")))
+  facet_grid(vars(dataset), switch = 'y')+
+  theme(strip.placement = 'outside',
+        strip.background = element_blank(),
+        plot.title = element_text(hjust = .5, vjust = .5, size = 10),
+        axis.title.x = element_text(
+          margin = unit(c(0, 0, 0, 0), "mm")))
 
-p2<- ggplot(bindGmean %>% filter(visInfo == "dS"), aes(x =c, y = b))+
+p2<- ggplot(gMeans %>% filter(visInfo == "dS"), aes(x =c, y = b))+
   geom_point()+
-  xlim(c(0,3))+ ylim(c(0,3))+
+  xlim(c(0,6))+ ylim(c(0,6))+
   xlab(NULL)+ylab(NULL)+
   labs(title = "Chroma")+
   geom_abline(lty = 2)+
   coord_equal()+
-  facet_grid(vars(pcentNrst), switch = 'y')+
+  facet_grid(vars(dataset), switch = 'y')+
   theme(plot.title = element_text(hjust = .5, vjust = .5, size = 10),
         strip.text = element_blank(),
         axis.title.x = element_text(
           margin = unit(c(0, 0, 0, 0), "mm")))
 
+library(patchwork)
 png("output\\rock-v-soil\\LR-LS-distance-relship-varyNrst.png",
     type = 'cairo',units = 'mm', res = 300, width = 200, height = 200)
 #cowplot::plot_grid(p1,p2, ncol = 2, align = 'v')
@@ -630,7 +540,76 @@ bindGmean %>%
   filter(pcentNrst =='All', visfeature == 'dS', c<1) %>%
   count()
 
-###** Overall Boxplots pop-mean LR , LS dists
+# 
+# ###* Scatterplots LR vs LS (average dataset)
+# dummy <- data.frame('a_b' =  c(range(allGmeanDist$dL_a_b,
+#                                       allGmeanDist$dL_a_c),
+#                                range(allGmeanDist$dS_a_b,
+#                                      allGmeanDist$dS_a_c)),
+#                     'a_c' = c(range(allGmeanDist$dL_a_b,
+#                                   allGmeanDist$dL_a_c),
+#                               range(allGmeanDist$dS_a_b,
+#                                     allGmeanDist$dS_a_c)),
+#                     'visInfo' = c(rep('dL',2), rep('dS',2)),
+#                     'rock_cover' = 0
+#                     )
+# png("output//rock-v-soil//LR-v-LS-facet-gMeanDist-scatter.png",
+#     type = 'cairo', units = 'mm', width = 215, height = 300, res = 300)
+# allGmeanDist %>% pivot_longer(cols = contains(c('dL', 'dS')),
+#                               names_to = c('visInfo','.value'),
+#                               names_sep = 3) %>%
+#   mutate(visInfo = fct_recode(visInfo, 'dL' = 'dL_', 'dS' = 'dS_')) %>%
+#   ggplot(aes(x = a_c, y = a_b, colour = rock_cover))+ 
+#   geom_point()+
+#   geom_abline(slope = 1, intercept = 0, lty = 2)+ 
+#   geom_blank(data = dummy)+
+#   theme_bw()+
+#   #coord_fixed(xlim = c(0,2.2), ylim = c(0,2.2))+ 
+#   labs(y = "L-R geometric mean distance (JNDs)",
+#        x = "L-S geometric mean distance (JNDs)")+
+#   theme(axis.title = element_text(size = 10), 
+#         aspect.ratio = 1)+
+#   facet_wrap(vars(visInfo), scales = 'free', ncol = 1,
+#              labeller = labeller(visInfo = c(dL = 'Lum dist', dS = 'Chroma dist')))
+# dev.off()
+#   
+# 
+# ###** small multiples facet by spp
+# pLum <- ggplot(allGmeanDist, aes(x = dL_a_c, y = dL_a_b))+
+#   geom_point(data = allGmeanDist[, c("dL_a_c", "dL_a_b")], color = "gray")+
+#   geom_point(aes(fill = rock_cover), size = 2, pch =21)+ 
+#   geom_abline(intercept = 0, lty = 2)+
+#   geom_text_repel(aes(label = siteLabs),
+#                   max.overlaps = Inf,
+#                   min.segment.length = 0,
+#                   box.padding = 0.5)+
+#   xlab("LS geometric mean distance")+ ylab("LR geometric mean distance")+
+#   facet_wrap(vars(collapseSpp))+
+#   theme(aspect.ratio = 1)
+# png("output\\rock-v-soil\\LR-vs-LS-lum-gmeandist-scatter_facetSpp.png",
+#     type = 'cairo',
+#     width = 150, height = 150, units = "mm", res = 300, pointsize = 6)
+# pLum; dev.off()
+# 
+# pCol <- ggplot(allGmeanDist, aes(x = dS_a_c, y = dS_a_b))+
+#   geom_point(data = allGmeanDist[, c("dS_a_c", "dS_a_b")], color = "gray")+
+#   geom_point(aes(fill = rock_cover), size = 2, pch =21)+ 
+#   geom_abline(intercept = 0, lty = 2)+
+#   geom_text_repel(aes(label = siteLabs),
+#                   max.overlaps = Inf,
+#                   min.segment.length = 0,
+#                   box.padding = 0.5)+
+#   xlab("LS geometric mean distance")+ ylab("LR geometric mean distance")+
+#   facet_wrap(vars(collapseSpp))+
+#   theme(aspect.ratio = 1)
+# png("output\\rock-v-soil\\LR-vs-LS-col-gmeandist-scatter_facetSpp.png",
+#     type = 'cairo',
+#     width = 150, height = 150, units = "mm", res = 300, pointsize = 6)
+# pCol; dev.off()
+# 
+# rm(pCol, pLum)
+
+###** Overall Boxplots pop-mean LR , LS dists ####
 ### paired t-test difference in overall LR-LS dists
 
 overallTtest <- bindGmean %>%
@@ -762,10 +741,49 @@ rm(tenPcent, nMspecs, maxCount)
 
 
 # Regression - Lithops coordinates predicted by substrate coordinates ####
-# Problem - lumMean isn't the perceptually transformed version, nor is it log scaled etc.
+# To do - lumMean isn't the perceptually transformed version, nor is it log scaled etc.
 
 
 ###* plotting dfs ####
+
+nrstLithops <- merge(unique(df[, c('xCoord', 'yCoord',"lumMean",
+                                   "abbrevs", "mspec","roi", "substrate")]), 
+                     unique(nrstSub_bc[, c("abbrevs.x", "mspec.x", "roi.x")]),
+                     by.y = c("abbrevs.x","mspec.x","roi.x"),
+                     by.x = c("abbrevs","mspec", "roi")) %>%
+  distinct(.) %>%
+  select(c(abbrevs,substrate, xCoord, yCoord, lumMean))
+
+gMeanLum <- merge(unique(df[, c('xCoord', 'yCoord',"lumMean",
+                                "abbrevs", "mspec","roi", "substrate")]), 
+                  unique(nrstSub_bc[
+                    nrstSub_bc$visInfo == 'dL',
+                    c("abbrevs.x", "mspec.x", "roi.y")]),
+                  by.y = c("abbrevs.x","mspec.x","roi.y"),
+                  by.x = c("abbrevs","mspec", "roi")) %>%
+  group_by(substrate,abbrevs, mspec) %>% 
+  summarise_at(c("xCoord", "yCoord", "lumMean"), mean) %>%
+  group_by(substrate, abbrevs) %>% # this step not all that NB, highly correlated w straight mean
+  summarise_at(c("xCoord", "yCoord", "lumMean"), mean) %>%
+  mutate
+  pivot_wider(names_from = substrate,
+              values_from = c(xCoord, yCoord, lumMean))
+  
+gMeanChrom <- merge(unique(df[, c("xCoord", "yCoord","lumMean",
+                                  "abbrevs", "mspec","roi", "substrate")]), 
+                    unique(nrstSub_bc[
+                      nrstSub_bc$visInfo == 'dS',
+                      c("abbrevs.x", "mspec.x", "roi.y")]),
+                    by.y = c("abbrevs.x","mspec.x","roi.y"),
+                    by.x = c("abbrevs","mspec", "roi")) %>%
+  group_by(abbrevs, substrate, mspec) %>% 
+  summarise_at(vars(swMean, mwMean, lwMean, lumMean), gmean) %>%
+  group_by(abbrevs, substrate) %>%
+  summarise_at(vars(swMean, mwMean, lwMean, lumMean), gmean) %>%
+  rbind(nrstLithops) %>%
+  as.data.frame(.) %>%
+  split(.,.$abbrevs)
+
 distSubsetsTf <- distSubsets %>% 
   rbindlist(idcol = T) %>%
   merge(., df[, c(colnames(.)[colnames(.) %in% colnames(df)],
