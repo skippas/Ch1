@@ -52,59 +52,6 @@ nrstSub_dS_c <- homogDF(df = nrstSub_dS_c,dropInfo = "dL", substrate = "c")
 nrstSub_bc <- rbind(nrstSub_dS_b, nrstSub_dS_c, nrstSub_dL_b, nrstSub_dL_c)
 
 rm(nrstSub_dL_b, nrstSub_dL_c, nrstSub_dS_b, nrstSub_dS_c)
-
-
-
-# Mean distance metrics ####
-###* Background-transfer metric ####
-perLithMeans <- nrstSub_bc %>% 
-  group_by(visInfo,subs,abbrevs.x, abbrevs.y, mspec.x, mspec.y) %>% 
-  summarise(dAcrossImages = mean(distance)) %>%
-  group_by(visInfo,subs,abbrevs.x, abbrevs.y, mspec.x) %>% # .x and .y notation is conf
-  summarise(dPerLith = mean(dAcrossImages))  # the mean of each image / lithops is one data point
-
-# import species & geol
-perLithMeans <- perLithMeans %>% 
-  mutate(collapseSpp.x = df$collapseSpp[match(abbrevs.x,df$abbrevs)], 
-         collapseSpp.y = df$collapseSpp[match(abbrevs.y,df$abbrevs)], 
-         geology.x = df$geology[match(abbrevs.x,df$abbrevs)],
-         geology.y = df$geology[match(abbrevs.y,df$abbrevs)]) %>%
-  group_by(collapseSpp.x) %>% 
-  mutate(popReps = n_distinct(abbrevs.x)) %>% 
-  ungroup() %>%
-  mutate(collapseSpp.x = fct_reorder(collapseSpp.x, popReps, min, .desc = T),
-         collapseSpp.x = fct_relevel(collapseSpp.x, "singlePopSpp", after = Inf),
-         visInfo = fct_recode(visInfo, LumContrast = "dL", ChromContrast = "dS")) %>%
-  select(-popReps) %>% filter(abbrevs.x == abbrevs.y)
-
-###** T-test & annotation df 
-stat.test <- perLithMeans %>% mutate(subs = as_factor(subs)) %>%
-  group_by(visInfo,abbrevs.x) %>% 
-  t_test(dPerLith ~ subs) %>% # problem here, used t_test to make own f above
-  adjust_pvalue(method = "bonferroni") %>%
-  add_significance() 
-stat.test <- stat.test %>% add_xy_position(x = "abbrevs.x", scales = "free")
-stat.test$collapseSpp.x <- perLithMeans$collapseSpp.x[match(stat.test$abbrevs.x,
-                                                            perLithMeans$abbrevs.x)]
-# boxplot
-
-p <- ggplot(data = perLithMeans, 
-            aes(x = abbrevs.x, y =  dPerLith)) +
-  geom_boxplot(aes(fill = subs), outlier.shape = NA) + coord_flip() + 
-  stat_pvalue_manual(stat.test, x = "abbrevs.x", coord.flip = T,
-                     hide.ns = T, label = "p.adj.signif") +
-  scale_fill_manual(values = c("b" = "#00BFC4", "c" = "#F8766D"),
-                    labels = c("lithops-rock", "lithops-soil")) +
-  theme_bw() + theme(panel.spacing = unit(0, "lines")) +
-  labs(fill = "Substrate contrast", x = "Populations by species",
-       y = "Noise scaled distance") +
-  scale_y_continuous(sec.axis = dup_axis(name = waiver())) 
-p <- p + facet_grid(vars(collapseSpp.x), vars(visInfo), scales = "free", 
-                    space = "free_y") 
-png(file = "output//rock-v-soil//boxplots-by-species-colour.png", type = 'cairo',
-    width = 20, height = 30, units = "cm", res = 300, pointsize = 6) ; p; dev.off()
-
-rm(stat.test, p, perLithMeans)
 ###* Paired distance metric ####
 
 source('functions//gmean.R')
@@ -114,53 +61,6 @@ source('functions//gmean.R')
 nrstSub_bc <- nrstSub_bc %>% filter(mspec.x == mspec.y) # this is what happens when set across image F anyway?
 
 # extracting the nearest original data. actually random lithops, not nearest.
-nrstLithops <- merge(unique(df[, c("swMean", "mwMean", "lwMean","lumMean",
-                                   "abbrevs", "mspec","roi", "substrate")]), 
-                     unique(nrstSub_bc[, c("abbrevs.x", "mspec.x", "roi.x")]),
-                     by.y = c("abbrevs.x","mspec.x","roi.x"),
-                     by.x = c("abbrevs","mspec", "roi")) %>%
-  distinct(.) %>%
-  select(-c('roi'))
-
-nrstLumROIs <- merge(unique(df[, c("swMean", "mwMean", "lwMean","lumMean",
-                                   "abbrevs", "mspec","roi", "substrate")]), 
-                     unique(nrstSub_bc[
-                       nrstSub_bc$visInfo == 'dL',
-                       c("abbrevs.x", "mspec.x", "roi.y")]),
-                     by.y = c("abbrevs.x","mspec.x","roi.y"),
-                     by.x = c("abbrevs","mspec", "roi")) %>%
-  group_by(abbrevs, substrate, mspec) %>% 
-  summarise_at(vars(swMean, mwMean, lwMean, lumMean), gmean)
-
-nrstChromROIs <- merge(unique(df[, c("swMean", "mwMean", "lwMean","lumMean",
-                                     "abbrevs", "mspec","roi", "substrate")]), 
-                       unique(nrstSub_bc[
-                         nrstSub_bc$visInfo == 'dS',
-                         c("abbrevs.x", "mspec.x", "roi.y")]),
-                       by.y = c("abbrevs.x","mspec.x","roi.y"),
-                       by.x = c("abbrevs","mspec", "roi")) %>%
-  group_by(abbrevs, substrate, mspec) %>% 
-  summarise_at(vars(swMean, mwMean, lwMean, lumMean), gmean)
-
-nrstLumLs <- rbind(nrstLithops, nrstLumROIs) %>%
-  mutate(splitFct = paste(abbrevs,mspec, sep = '--')) %>%
-  split(., .$splitFct)
-
-nrstChromLs <- rbind(nrstLithops, nrstChromROIs) %>%
-  mutate(splitFct = paste(abbrevs,mspec, sep = '--')) %>%
-  split(., .$splitFct)
-
-nrstLumLs <- lapply(nrstLumLs, function(x) { # Pavo format
-  rownames(x) <- make.unique(x$substrate)
-  x <- rename(x, s = 'swMean', m = 'mwMean', l = 'lwMean', lum = 'lumMean')
-  x <- x[,-which(!names(x) %in% c("s", "m", "l","lum"))]
-})
-
-nrstChromLs <- lapply(nrstChromLs, function(x) { # Pavo format
-  rownames(x) <- make.unique(x$substrate)
-  x <- rename(x, s = 'swMean', m = 'mwMean', l = 'lwMean', lum = 'lumMean')
-  x <- x[,-which(!names(x) %in% c("s", "m", "l","lum"))]
-})
 
 lumDists <- lapply(nrstLumLs, coldist,
                     n = c(1,16,32), weber = .05, weber.achro = .05, 
