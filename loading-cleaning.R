@@ -140,6 +140,8 @@ df <- df[row_sub,]
 # Remove colour oultiers
 source("functions//RNL_colspace_tri.R")
 df <- RNL_colspace_tri(df = df)
+df <- df %>% 
+  mutate(lumCoord = log(lumMean)/0.05)
 plot(df$xCoord, df$yCoord)
 abline(h = c(1, -5.5), v =(8))
 colOutliers <- df[xCoord > 8 | yCoord >1 | yCoord < -5.5,]
@@ -237,42 +239,104 @@ for(i in 1:10){
 
 # double check JNDs / coordinates versus MICA and PAVO ####
 
-euclidean <- function(a, b) sqrt(sum((a - b)^2))
+#  euclidean <- function(a, b) sqrt(sum((a - b)^2))
+# euclidean(c(1.6,-2.14), c(1.11,-1.78))
+# euclidean(as.numeric(gMeanChrom[113,3:4]), as.numeric(gMeanChrom[2,3:4]))
+# 
+# 
+# x<-df %>% filter(pop_spp == grep('Droedam', unique(df$pop_spp), value = T),
+#                  mspec == '0317_0321', roi == 'a1' | roi == 'b1',
+#                  substrate == 'a' | substrate == 'b')
+# plot(x$xCoord, x$yCoord)
+# x1 <-as.numeric(x[1, c('xCoord', 'yCoord')])
+# x2 <- as.numeric(x[2, c('xCoord', 'yCoord')])
+# euclidean(x1, x2)
+# 
+# checkgMeanDist<-df %>% filter(abbrevs == unique(df$abbrevs)[2]) %>%
+#   group_by(abbrevs,mspec, substrate) %>%
+#   summarise_at(c('swMean', 'mwMean', 'lwMean', 'lumMean'), gmean) %>%
+#   group_by(abbrevs, substrate) %>%
+#   summarise_at(c('swMean', 'mwMean', 'lwMean', 'lumMean'), gmean)
+# 
+# checkMeanCoord<-df %>% filter(abbrevs == unique(df$abbrevs)[2]) %>%
+#   group_by(abbrevs,mspec, substrate) %>%
+#   summarise_at(c('xCoord', 'yCoord'), mean) %>%
+#   group_by(abbrevs, substrate) %>%
+#   summarise_at(c('xCoord', 'yCoord'), mean)
+# 
+# checkgMeanDist <- checkgMeanDist %>%
+#   select('abbrevs','substrate', 'swMean', 'mwMean','lwMean','lumMean') %>%
+#   rename(s = 'swMean', m = 'mwMean', l = 'lwMean',  lum = 'lumMean') %>%
+#   mutate(substrate = make.unique(substrate)) %>%
+#   as.data.frame()
+# 
+# rownames(checkgMeanDist) <- checkgMeanDist$substrate
+# checkgMeanDist$substrate <- NULL
+# checkgMeanDist$abbrevs <- NULL
+# cntrst <- substring(rownames(checkgMeanDist),1,1)
+# 
+# pavoDists <- bootcoldist(checkgMeanDist,
+#                          by = cntrst,
+#                          n = c(1, 16, 32),
+#                          weber = 0.05,
+#                          weber.achro = 0.1,
+#                          achromatic = T,
+#                          qcatch = 'Qi',
+#                          weber.ref = 'longest'
+# )
+# 
+# euclidean(as.numeric(checkMeanCoord[1,3:4]),
+#           as.numeric(checkMeanCoord[2, 3:4]))
+# 
+# 
+# library(pavo)
+# coldist()
+# 
+# sqrt(32/49)*0.02
+# 
+# 0.01616244/ sqrt(16/49)
 
-x<-df %>% filter(pop_spp == grep('Droedam', unique(df$pop_spp), value = T),
-                 mspec == '0317_0321', roi == 'a1' | roi == 'b1',
-                 substrate == 'a' | substrate == 'b')
-plot(x$xCoord, x$yCoord)
-x1 <-as.numeric(x[1, c('xCoord', 'yCoord')])
-x2 <- as.numeric(x[2, c('xCoord', 'yCoord')])
-euclidean(x1, x2)
+# Check coldist_effic function
+# 
+# efficValues <- nrstSub_bc[1:3,]
+# efficValues <- efficValues %>% select(-c(visInfo, distance))
+# semi_join(jnds_b, efficValues)
+# 
+# dat <- df %>%
+#   filter(abbrevs == unique(df$abbrevs)[1]) 
+# 
+# dat <-dat %>% 
+#   filter( (roi == 'a1' & mspec == '3859_3862') |
+#            (roi == 'b3' & mspec == '3886_3888') |
+#             (roi == 'b5' & mspec == '3880_3883')) 
+# 
+# dat <- dat %>% ungroup() %>%
+#   select('abbrevs','substrate', 'swMean', 'mwMean','lwMean','lumMean') %>%
+#   rename(s = 'swMean', m = 'mwMean', l = 'lwMean',  lum = 'lumMean') %>%
+#   mutate(substrate = make.unique(substrate)) %>%
+#   as.data.frame()
+# 
+# rownames(dat) <- dat$substrate
+# dat$substrate <- NULL
+# dat$abbrevs <- NULL
+# cntrst <- substring(rownames(dat),1,1)
+# 
+# pavoDists <- coldist(dat,
+#                          n = c(1, 16, 32),
+#                          weber = 0.05,
+#                          weber.achro = 0.05,
+#                          achromatic = T,
+#                          qcatch = 'Qi',
+#                          weber.ref = 'longest'
+# )
+# coldis
+# 
+# 
 
-checkPavoVsGmeandist <- x %>%
-  select('abbrevs','substrate', 'swMean', 'mwMean','lwMean','lumMean') %>%
-  rename(s = 'swMean', m = 'mwMean', l = 'lwMean',  lum = 'lumMean') %>%
-  mutate(substrate = make.unique(substrate)) %>%
-  as.data.frame()
-rownames(checkPavoVsGmeandist) <- checkPavoVsGmeandist$substrate
-checkPavoVsGmeandist$substrate <- NULL
-checkPavoVsGmeandist$abbrevs <- NULL
-cntrst <- substring(rownames(checkPavoVsGmeandist),1,1)
-
-pavoDists <- bootcoldist(checkPavoVsGmeandist,
-                         by = cntrst,
-                         n = c(1, 16, 32),
-                         weber = 0.05,
-                         weber.achro = 0.1,
-                         achromatic = T,
-                         qcatch = 'Qi',
-                         weber.ref = 'longest'
-)
-
-
-library(pavo)
-coldist()
-
-sqrt(32/49)*0.02
-
-0.01616244/ sqrt(16/49)
-
-
+library(ggpmisc)
+ggplot(df, aes(mwMean, lwMean))+
+  geom_point()+
+  stat_poly_eq(
+    formula = y~x,aes(label = paste(..eq.label..,..rr.label..,
+                                    ..p.value.label.., sep = "~~~~")),
+                             parse = TRUE)
